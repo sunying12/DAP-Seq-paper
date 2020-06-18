@@ -1,0 +1,206 @@
+# Source: https://github.com/kevinblighe/E-MTAB-6141
+# Resource: https://jokergoo.github.io/ComplexHeatmap-reference/book/heatmap-annotations.html#box-annotation
+# Complex heatmap
+require (RColorBrewer)
+require (ComplexHeatmap)
+require (circlize)
+require (digest)
+require (cluster)
+
+setwd ("/Carnegie/DPB/Data/Shared/Labs/Dinneny/Private/Ysun/2020/results/heatmap")
+
+#### Root
+metadata = read.table("./metadata/metadata_FC_Root.txt", sep = '\t', row.names = 1, header = TRUE, stringsAsFactors = FALSE)
+metadata= (metadata [,c(3, 1, 2)])
+mat = read.table("./mainfiles/RNASeq_relaxed_Root_05PV.txt", sep = '\t', row.names = 1, header = TRUE, stringsAsFactors = FALSE)
+mat= (mat [,c(1, 2, 3, 4, 5, 6, 7, 8)])
+#sig_genes = read.csv("./genelist/Ancestral_root.txt", sep = ',', header = FALSE, stringsAsFactors = FALSE)[,1]
+#sig_genes = read.csv("./genelist/glycophyte_root.txt", sep = ',', header = FALSE, stringsAsFactors = FALSE)[,1]
+#sig_genes = read.csv("./genelist/halophyte_root.txt", sep = ',', header = FALSE, stringsAsFactors = FALSE)[,1]
+#sig_genes = read.csv("./genelist/LineageII_root.txt", sep = ',', header = FALSE, stringsAsFactors = FALSE)[,1]
+
+
+#### Shoot
+metadata = read.table("./metadata/metadata_FC_Shoot.txt", sep = '\t', row.names = 1, header = TRUE, stringsAsFactors = FALSE)
+metadata= (metadata [,c(3, 1, 2)])
+mat = read.table("./mainfiles/RNASeq_relaxed_Shoot_05PV.txt", sep = '\t', row.names = 1, header = TRUE, stringsAsFactors = FALSE)
+mat= (mat [,c(1, 2, 3, 4, 5, 6, 7, 8)])
+#sig_genes = read.csv("./genelist/Ancestral_shoot.txt", sep = ',', header = FALSE, stringsAsFactors = FALSE)[,1]
+#sig_genes = read.csv("./genelist/glycophyte_shoot.txt", sep = ',', header = FALSE, stringsAsFactors = FALSE)[,1]
+#sig_genes = read.csv("./genelist/halophte_shoot.txt", sep = ',', header = FALSE, stringsAsFactors = FALSE)[,1]
+sig_genes = read.csv("./genelist/LineageII_shoot.txt", sep = ',', header = FALSE, stringsAsFactors = FALSE)[,1]
+
+# Check this makes sense
+############################################
+all(rownames(metadata) == colnames(mat))
+# Subset the expression matrix for the statistically significant genes
+############################################
+heat <- mat[sig_genes,]
+############################################
+# set colour scheme and choose breaks
+myCol <- colorRampPalette(c('dodgerblue', 'white', 'firebrick1'))(100)
+myBreaks <- seq(-1.25, 1.25, length.out = 100)
+############################################
+# Now let’s build the actual annotation object, i.e., the legend:
+# Create an initial data-frame of the annotation that we want to use
+# In this example, the 'ann' object turns out to be the exact same as 'metadata'
+ann <- data.frame(
+  Species = metadata$Species,
+  Tissue = metadata$Tissue,
+  Time = metadata$Time,
+  stringsAsFactors = FALSE)
+
+# create the colour mapping
+colours <- list(
+  Species = c('At' = 'darkolivegreen1', 'Si' = 'darkolivegreen4', 'Sp' = 'darkslategray1', 'Es' = 'blue'),
+  Tissue = c('Root' = 'tan3', 'Shoot' = 'forestgreen'),
+  Time = c('3H' = 'gray80', '24H' = 'gray47'))
+
+# now create the ComplexHeatmap annotation object
+# as most of these parameters are self-explanatory, comments will only appear where needed
+colAnn <- HeatmapAnnotation(
+  df = ann,
+  which = 'col', # 'col' (samples) or 'row' (gene) annotation?
+  na_col = 'white', # default colour for any NA values in the annotation data-frame, 'ann'
+  col = colours,
+  annotation_height = 0.6,
+  annotation_width = unit(1, 'cm'),
+  gap = unit(1, 'mm'),
+  annotation_legend_param = list(
+    Species = list(
+      nrow = 4, # number of rows across which the legend will be arranged
+      title = 'Species',
+      title_position = 'topcenter',
+      legend_direction = 'vertical',
+      title_gp = gpar(fontsize = 12, fontface = 'bold'),
+      labels_gp = gpar(fontsize = 12, fontface = 'bold')),
+    Tissue = list(
+      nrow = 4, # number of rows across which the legend will be arranged
+      title = 'Tissue',
+      title_position = 'topcenter',
+      legend_direction = 'vertical',
+      title_gp = gpar(fontsize = 12, fontface = 'bold'),
+      labels_gp = gpar(fontsize = 12, fontface = 'bold')),
+    Time = list(
+      nrow = 4, # number of rows across which the legend will be arranged
+      title = 'Time',
+      title_position = 'topcenter',
+      legend_direction = 'vertical',
+      title_gp = gpar(fontsize = 12, fontface = 'bold'),
+      labels_gp = gpar(fontsize = 12, fontface = 'bold'))))
+
+
+# create annotation: box-and-whisker plots
+boxplotRow <- HeatmapAnnotation(
+  boxplot = row_anno_boxplot(
+    heat,
+    border = FALSE,
+    gp = gpar(fill = '#CCCCCC'),
+    pch = '.',
+    size = unit(2, 'mm'),
+    axis = TRUE,
+    axis_param = list(
+      gp = gpar(fontsize = 12),
+      side = 'top')),
+  annotation_width = unit(c(2.0), 'cm'),
+  which = 'row')
+
+############################################################################################################
+# perform partitioning around medoids (PAM) to identify clusters in the data
+# Performing k-means or PAM on our data can help us to identify internal ‘structure’ in the data that may relate to biologically meaningful pathways, as an example.
+############################################################################################################
+heat <- heat[complete.cases(heat), ]
+
+pamClusters <- cluster::pam(heat, k = 12 ) # pre-select k = 4 centers
+pamClusters$clustering <- paste0('C ', pamClusters$clustering)
+
+## fix order of the clusters to have 1 to 4, top to bottom
+pamClusters$clustering <- factor(pamClusters$clustering,
+                                 #levels = c( 'C 1', 'C 2', 'C 3', 'C 4', 'C 5', 'C 6', 'C 7', 'C 8', 'C 9', 'C 10', 'C 11', 'C 12'))
+                                 # Root_ancestral
+                                 #old#levels = c( 'C 8', 'C 1', 'C 10', 'C 11', 'C 9', 'C 7', 'C 2', 'C 4', 'C 3', 'C 6', 'C 5', 'C 12'))
+                                 #levels = c( 'C 9', 'C 10', 'C 5', 'C 2', 'C 6', 'C 7', 'C 4', 'C 1', 'C 3', 'C 8', 'C 11', 'C 12'))
+                                 
+                                 # Shoot_ancestral
+                                 #old#levels = c( 'C 6', 'C 4',  'C 7', 'C 5', 'C 1', 'C 2',  'C 8', 'C 3', 'C 9', 'C 12', 'C 11', 'C 10'))
+                                 #levels = c( 'C 9', 'C 1', 'C 6', 'C 8', 'C 2', 'C 4', 'C 12', 'C 10', 'C 3', 'C 11', 'C 5', 'C 7'))
+                                 
+                                 # Root_glycophyte
+                                 #old#levels = c( 'C 2', 'C 4', 'C 7', 'C 1', 'C 8', 'C 10'))
+                                 #levels = c( 'C 1', 'C 2', 'C 8', 'C 6', 'C 5', 'C 9',  'C 7', 'C 10', 'C 12', 'C 3', 'C 11', 'C 4'))
+                                 
+                                 # Shoot_glycophyte
+                                 #old#levels = c( 'C 8', 'C 2', 'C 1', 'C 3', 'C 4', 'C 5', 'C 7', 'C 6', 'C 9', 'C 10', 'C 11', 'C 12'))
+                                 #levels = c('C 1', 'C 2', 'C 3', 'C 9', 'C 6', 'C 7', 'C 8', 'C 11', 'C 12', 'C 4', 'C 5', 'C 10'))
+
+                                 # Root_halophyte
+                                 #old#levels = c( 'C 3', 'C 6', 'C 7', 'C 8', 'C 10', 'C 1', 'C 2', 'C 4', 'C 5', 'C 9', 'C 11', 'C 12'))
+                                 #levels = c(  'C 2', 'C 6', 'C 7', 'C 11', 'C 12', 'C 9',  'C 10', 'C 8', 'C 5', 'C 3', 'C 1', 'C 4'))
+                                 
+                                  # Shoot_halophyte
+                                 #old#levels = c( 'C 1', 'C 2', 'C 3', 'C 4', 'C 5', 'C 6', 'C 7', 'C 8', 'C 9', 'C 10', 'C 11', 'C 12'))
+                                 #levels = c( 'C 4', 'C 5', 'C 6', 'C 2', 'C 7', 'C 11', 'C 12', 'C 8',  'C 1', 'C 3', 'C 10', 'C 9'))
+                                 
+                                 # Root_lineageII
+                                 #old#levels = c( 'C 1', 'C 2', 'C 3', 'C 4', 'C 5', 'C 6', 'C 7', 'C 8', 'C 9', 'C 10', 'C 11', 'C 12'))
+                                 #levels = c( 'C 5', 'C 10', 'C 6', 'C 7', 'C 3', 'C 11', 'C 1', 'C 8', 'C 9', 'C 2', 'C 4', 'C 12'))
+                                 
+                                 # Shoot_lineageII
+                                 #old#levels = c( 'C 1', 'C 2', 'C 3', 'C 4', 'C 5', 'C 6', 'C 7', 'C 8', 'C 9', 'C 10', 'C 11', 'C 12'))
+                                 levels = c( 'C 1', 'C 4', 'C 2', 'C 7', 'C 9', 'C 10', 'C 6', 'C 8', 'C 11', 'C 12', 'C 3', 'C 5'))
+                                 
+############################################################################################################
+# create the actual heatmap object
+hmap <- Heatmap(heat,
+                
+                # split the genes / rows according to the PAM clusters
+                split = pamClusters$clustering,
+                cluster_row_slices = FALSE,
+                
+                name = 'Log2FC\n',
+                
+                col = colorRamp2(myBreaks, myCol),
+                
+                # parameters for the colour-bar that represents gradient of expression
+                heatmap_legend_param = list(
+                  color_bar = 'continuous',
+                  legend_direction = 'vertical',
+                  legend_width = unit(8, 'cm'),
+                  legend_height = unit(5.0, 'cm'),
+                  title_position = 'topcenter',
+                  title_gp=gpar(fontsize = 12, fontface = 'bold'),
+                  labels_gp=gpar(fontsize = 12, fontface = 'bold')),
+                
+                # row (gene) parameters
+                cluster_rows = TRUE,
+                show_row_dend = FALSE,
+                #row_title = 'Statistically significant genes',
+                row_title_side = 'left',
+                row_title_gp = gpar(fontsize = 12,  fontface = 'bold'),
+                row_title_rot = 90,
+                show_row_names = FALSE,
+                row_names_gp = gpar(fontsize = 10, fontface = 'bold'),
+                row_names_side = 'left',
+                row_dend_width = unit(25,'mm'),
+                
+                # column (sample) parameters
+                cluster_columns = FALSE,
+                show_column_dend = FALSE,
+                column_title = '',
+                column_title_side = 'bottom',
+                column_title_gp = gpar(fontsize = 12, fontface = 'bold'),
+                column_title_rot = 0,
+                show_column_names = FALSE,
+                column_names_gp = gpar(fontsize = 10, fontface = 'bold'),
+                column_names_max_height = unit(10, 'cm'),
+                column_dend_height = unit(25,'mm'),
+                
+                # specify top and bottom annotations
+                top_annotation = colAnn)
+
+# draw the heatmap
+
+draw(hmap,
+     heatmap_legend_side = 'left',
+     annotation_legend_side = 'right',
+     row_sub_title_side = 'left')
